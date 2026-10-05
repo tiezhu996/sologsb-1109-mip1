@@ -7,13 +7,16 @@ import {
   ProfileOutlined,
   DashboardOutlined,
   DownloadOutlined,
+  SwapOutlined,
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { seedIfEmpty } from './utils/seed';
+import { onVisible, subscribeStoreChanges, type StoreChangeKind } from './utils/crossTab';
 import { useHerbStore } from './stores/herbStore';
 import { useMethodStore } from './stores/methodStore';
 import { useBatchStore } from './stores/batchStore';
 import { useSampleStore } from './stores/sampleStore';
+import { useWokStore } from './stores/wokStore';
 import { downloadText, exportBackupJson } from './utils/export';
 
 const { Header, Sider, Content, Footer } = Layout;
@@ -23,6 +26,7 @@ const MENU_ITEMS = [
   { key: '/', icon: <DashboardOutlined />, label: <Link to="/">首页总览</Link> },
   { key: '/herbs', icon: <ExperimentOutlined />, label: <Link to="/herbs">药材台账</Link> },
   { key: '/methods', icon: <FireOutlined />, label: <Link to="/methods">炮制方法</Link> },
+  { key: '/woks', icon: <SwapOutlined />, label: <Link to="/woks">锅次交接</Link> },
   { key: '/batches', icon: <ProfileOutlined />, label: <Link to="/batches">工序记录台</Link> },
   { key: '/samples', icon: <InboxOutlined />, label: <Link to="/samples">留样台账</Link> },
 ];
@@ -35,6 +39,8 @@ export default function App() {
   const hydrateMethods = useMethodStore((s) => s.hydrate);
   const hydrateBatches = useBatchStore((s) => s.hydrate);
   const hydrateSamples = useSampleStore((s) => s.hydrate);
+  const hydrateWoks = useWokStore((s) => s.hydrate);
+  const hydrateWokDrafts = useWokStore((s) => s.hydrateDrafts);
   const location = useLocation();
 
   useEffect(() => {
@@ -42,7 +48,8 @@ export default function App() {
     (async () => {
       try {
         await seedIfEmpty();
-        await Promise.all([hydrateHerbs(), hydrateMethods(), hydrateBatches(), hydrateSamples()]);
+        // 重开浏览器即恢复未完成锅次、锅位占用与未提交草稿
+        await Promise.all([hydrateHerbs(), hydrateMethods(), hydrateBatches(), hydrateSamples(), hydrateWoks(), hydrateWokDrafts()]);
       } catch (error) {
         message.error(`本地数据装载失败：${(error as Error).message}`);
       } finally {
@@ -54,7 +61,29 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, [hydrateHerbs, hydrateMethods, hydrateBatches, hydrateSamples, message]);
+  }, [hydrateHerbs, hydrateMethods, hydrateBatches, hydrateSamples, hydrateWoks, hydrateWokDrafts, message]);
+
+  // 其他标签页先写入（开工/接手/收锅/留样）后，本页立即重新装载，避免基于过期数据提交
+  useEffect(() => {
+    const reload = (kind: StoreChangeKind) => {
+      if (kind === 'woks') {
+        void hydrateWoks();
+      } else if (kind === 'batches') {
+        void hydrateBatches();
+      } else if (kind === 'samples') {
+        void hydrateSamples();
+      }
+    };
+    const unsubscribe = subscribeStoreChanges(reload);
+    const offVisible = onVisible(() => {
+      void hydrateWoks();
+      void hydrateBatches();
+    });
+    return () => {
+      unsubscribe();
+      offVisible();
+    };
+  }, [hydrateWoks, hydrateBatches, hydrateSamples]);
 
   const selectedKey = MENU_ITEMS.map((item) => item.key)
     .filter((key) => (key === '/' ? location.pathname === '/' : location.pathname.startsWith(key)))

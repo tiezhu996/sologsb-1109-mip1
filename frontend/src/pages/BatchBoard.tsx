@@ -11,6 +11,7 @@ import { useHerbFilter } from '../hooks/useHerbFilter';
 import { useHerbStore } from '../stores/herbStore';
 import { useMethodStore } from '../stores/methodStore';
 import { useBatchStore } from '../stores/batchStore';
+import { useWokStore } from '../stores/wokStore';
 import { HERB_ORIGINS, HERB_PARTS } from '../types/herb-material';
 import { FIRE_LEVELS, type FireLevel } from '../types/processing-method';
 import { PROCESS_DEGREES, type ProcessBatch, type ProcessDegree } from '../types/process-batch';
@@ -48,6 +49,8 @@ export default function BatchBoard() {
   const lockBatch = useBatchStore((s) => s.lockBatch);
   const unlockAsQc = useBatchStore((s) => s.unlockAsQc);
   const removeBatch = useBatchStore((s) => s.removeBatch);
+  const woks = useWokStore((s) => s.woks);
+  const wokOf = (id?: string) => (id ? woks.find((w) => w.id === id) : undefined);
 
   const herbFilter = useHerbFilter();
   const [params] = useSearchParams();
@@ -183,7 +186,12 @@ export default function BatchBoard() {
   };
 
   const columns: TableColumnsType<ProcessBatch> = [
-    { title: '生产批号', dataIndex: 'batchNo', width: 130, render: (v: string) => <Text strong>{v}</Text> },
+    { title: '生产批号', dataIndex: 'batchNo', width: 150, render: (v: string, record) => (
+      <Space size={4}>
+        <Text strong>{v}</Text>
+        {record.wokId && wokOf(record.wokId) ? <Tag color="geekblue">{wokOf(record.wokId)!.pot}</Tag> : null}
+      </Space>
+    ) },
     { title: '药材', dataIndex: 'herbId', width: 90, render: (id: string) => herbName(id) },
     { title: '方法', dataIndex: 'methodId', width: 90, render: (id: string) => methodOf(id)?.name ?? '-' },
     {
@@ -222,8 +230,17 @@ export default function BatchBoard() {
               放行
             </Button>
           )}
-          <Popconfirm title={`确认删除 ${record.batchNo}？`} onConfirm={() => removeBatch(record.id).then(() => message.success('已删除'))}>
-            <Button size="small" type="link" danger>
+          <Popconfirm
+            title={record.wokId ? `该记录由收锅生成，不能单独删除` : `确认删除 ${record.batchNo}？`}
+            description={record.wokId ? '请到「锅次交接」处理对应锅次（已留样的不能作废，只能登记异常）。' : undefined}
+            disabled={Boolean(record.wokId)}
+            onConfirm={() =>
+              removeBatch(record.id)
+                .then(() => message.success('已删除'))
+                .catch((error: Error) => message.warning(error.message))
+            }
+          >
+            <Button size="small" type="link" danger disabled={Boolean(record.wokId)}>
               删除
             </Button>
           </Popconfirm>

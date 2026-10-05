@@ -8,6 +8,7 @@ import EmptyPanel from '../components/common/EmptyPanel';
 import { useSampleStore } from '../stores/sampleStore';
 import { useBatchStore } from '../stores/batchStore';
 import { useHerbStore } from '../stores/herbStore';
+import { useWokStore } from '../stores/wokStore';
 import { CABINETS, type ObserveLog, type RetainSample, type SampleExpiry } from '../types/retain-sample';
 import { buildExpiryList, formatDate, todayStr } from '../utils/degree';
 
@@ -42,6 +43,7 @@ export default function SampleLedger() {
   const appendObserveLog = useSampleStore((s) => s.appendObserveLog);
   const batches = useBatchStore((s) => s.batches);
   const herbs = useHerbStore((s) => s.herbs);
+  const woks = useWokStore((s) => s.woks);
 
   const [selectedCabinet, setSelectedCabinet] = useState<string | undefined>(undefined);
   const [open, setOpen] = useState(false);
@@ -62,7 +64,8 @@ export default function SampleLedger() {
     const batch = batches.find((b) => b.id === batchId);
     if (!batch) return '未知批次';
     const herb = herbs.find((h) => h.id === batch.herbId);
-    return `${batch.batchNo} · ${herb?.name ?? '未知药材'} · 得率 ${batch.yieldRate}%`;
+    const wok = batch.wokId ? woks.find((w) => w.id === batch.wokId) : undefined;
+    return `${batch.batchNo} · ${herb?.name ?? '未知药材'} · 得率 ${batch.yieldRate}%${wok ? ` · ${wok.pot}` : ''}`;
   };
 
   const openCreate = () => {
@@ -124,7 +127,12 @@ export default function SampleLedger() {
 
   const columns: TableColumnsType<SampleExpiry> = [
     { title: '留样编号', width: 170, render: (_, row) => <Text strong>{row.sample.sampleNo}</Text> },
-    { title: '关联批次', width: 260, render: (_, row) => batchLabel(row.sample.batchId) },
+    { title: '关联锅次', width: 290, render: (_, row) => (
+      <Space size={4}>
+        <span>{batchLabel(row.sample.batchId)}</span>
+        {batches.find((b) => b.id === row.sample.batchId)?.wokId ? <Tag color="geekblue">同一锅次</Tag> : null}
+      </Space>
+    ) },
     { title: '留样量(g)', width: 100, align: 'right', render: (_, row) => row.sample.amountG },
     { title: '留样期(月)', width: 100, align: 'right', render: (_, row) => row.sample.retainMonths },
     { title: '柜位', width: 80, render: (_, row) => <Tag color="green">{row.sample.cabinet}</Tag> },

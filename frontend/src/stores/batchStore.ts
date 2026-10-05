@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import { db } from '../utils/db';
 import { uid } from '../utils/id';
+import { broadcastChange, emitLocal } from '../utils/crossTab';
 import type { FireLevel } from '../types/processing-method';
 import type { ProcessBatch, ProcessDegree } from '../types/process-batch';
+import type { WokBatch } from '../types/wok-batch';
 
 export interface BatchInput {
   batchNo: string;
@@ -64,6 +66,7 @@ export const useBatchStore = create<BatchState>()((set, get) => ({
     };
     await db.batches.put(batch);
     set({ batches: [batch, ...get().batches] });
+    broadcastChange('batches');
     return batch;
   },
 
@@ -81,12 +84,25 @@ export const useBatchStore = create<BatchState>()((set, get) => ({
     }
     await db.batches.put(next);
     set({ batches: get().batches.map((b) => (b.id === id ? next : b)) });
+
+    // 收锅生成的工序记录：质检改判同步回锅次，保证工序记录与锅次台账一致
+    if (current.wokId && (patch.degree !== undefined || patch.yieldRate !== undefined || patch.auxUsedKg !== undefined)) {
+      await syncBatchToWok(current.wokId, next);
+    }
+
+    broadcastChange('batches');
     return true;
   },
 
   removeBatch: async (id) => {
+    const current = get().batches.find((b) => b.id === id);
+    // 收锅生成的工序记录不能直接删除：应到锅次交接页作废锅次（已留样的还禁止作废）
+    if (current?.wokId) {
+      throw new Error('该工序记录由收锅生成，请在锅次交接页处理，不能单独删除');
+    }
     await db.batches.delete(id);
     set({ batches: get().batches.filter((b) => b.id !== id) });
+    broadcastChange('batches');
   },
 
   lockBatch: async (id) => {
@@ -97,6 +113,10 @@ export const useBatchStore = create<BatchState>()((set, get) => ({
     const next: ProcessBatch = { ...current, locked: true, lockedAt: new Date().toISOString() };
     await db.batches.put(next);
     set({ batches: get().batches.map((b) => (b.id === id ? next : b)) });
+    if (current.wokId) {
+      await syncBatchToWok(current.wokId, next);
+    }
+    broadcastChange('batches');
   },
 
   unlockAsQc: async (id, qcBy) => {
@@ -107,6 +127,10 @@ export const useBatchStore = create<BatchState>()((set, get) => ({
     const next: ProcessBatch = { ...current, locked: false, qcBy };
     await db.batches.put(next);
     set({ batches: get().batches.map((b) => (b.id === id ? next : b)) });
+    if (current.wokId) {
+      await syncBatchToWok(current.wokId, next);
+    }
+    broadcastChange('batches');
   },
 
   degreeCount: () => {
@@ -121,3 +145,24 @@ export const useBatchStore = create<BatchState>()((set, get) => ({
 
   batchesOfHerb: (herbId) => get().batches.filter((b) => b.herbId === herbId),
 }));
+
+/**
+ * 将工序记录的质检改判/锁定状态同步到对应锅次（不改修订号与交接链，
+ * 属于收锅后质检台账层面的同步；开工冻结字段与交接记录不允许通过此入口改动）。
+ */
+async function syncBatchToWok(wokId: string, batch: ProcessBatch): Promise<void> {
+  const wok = await db.wokBatches.get(wokId);
+  if (!wok) {
+    return;
+  }
+  const patch: Partial<WokBatch> = {
+    degree: batch.degree,
+    yieldRate: batch.yieldRate,
+    auxUsedKg: batch.auxUsedKg,
+    locked: batch.locked,
+  };
+  const next: WokBatch = { ...wok, ...patch };
+  await db.wokBatches.put(next);
+  emitLocal('woks');
+  broadcastChange('woks');
+}

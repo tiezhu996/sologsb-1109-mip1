@@ -6,6 +6,7 @@ import HerbList from '../pages/HerbList';
 import MethodList from '../pages/MethodList';
 import BatchBoard from '../pages/BatchBoard';
 import SampleLedger from '../pages/SampleLedger';
+import WokHandover from '../pages/WokHandover';
 
 function NotFound() {
   return (
@@ -22,7 +23,7 @@ function NotFound() {
   );
 }
 
-/** 全部路由：首页 + 药材台账 / 炮制方法 / 工序记录台 / 留样台账 */
+/** 全部路由：首页 + 药材台账 / 炮制方法 / 锅次交接 / 工序记录台 / 留样台账 */
 export const routes: RouteObject[] = [
   {
     path: '/',
@@ -31,6 +32,7 @@ export const routes: RouteObject[] = [
       { index: true, element: <ProcessBoard /> },
       { path: 'herbs', element: <HerbList /> },
       { path: 'methods', element: <MethodList /> },
+      { path: 'woks', element: <WokHandover /> },
       { path: 'batches', element: <BatchBoard /> },
       { path: 'samples', element: <SampleLedger /> },
       { path: '*', element: <NotFound /> },

@@ -8,15 +8,17 @@ export interface BackupPayload {
   methods: unknown[];
   batches: unknown[];
   samples: unknown[];
+  wokBatches: unknown[];
 }
 
-/** 汇总全部本地表为 JSON 备份（schema 迁移前先导出） */
+/** 汇总全部本地表为 JSON 备份（schema 迁移前先导出；未提交草稿不纳入备份） */
 export async function buildBackup(): Promise<BackupPayload> {
-  const [herbs, methods, batches, samples] = await Promise.all([
+  const [herbs, methods, batches, samples, wokBatches] = await Promise.all([
     db.herbs.toArray(),
     db.methods.toArray(),
     db.batches.toArray(),
     db.samples.toArray(),
+    db.wokBatches.toArray(),
   ]);
   return {
     app: 'gbherbprocess',
@@ -26,6 +28,7 @@ export async function buildBackup(): Promise<BackupPayload> {
     methods,
     batches,
     samples,
+    wokBatches,
   };
 }
 
@@ -66,17 +69,13 @@ export async function importBackup(text: string): Promise<{ herbs: number; metho
     batches: payload.batches?.length ?? 0,
     samples: payload.samples?.length ?? 0,
   };
-  await db.transaction('rw', db.herbs, db.methods, db.batches, db.samples, async () => {
-    await Promise.all([
-      db.herbs.clear(),
-      db.methods.clear(),
-      db.batches.clear(),
-      db.samples.clear(),
-    ]);
+  await db.transaction('rw', [db.herbs, db.methods, db.batches, db.samples, db.wokBatches, db.wokDrafts], async () => {
+    await Promise.all([db.herbs.clear(), db.methods.clear(), db.batches.clear(), db.samples.clear(), db.wokBatches.clear()]);
     if (payload.herbs?.length) await db.herbs.bulkPut(payload.herbs as never[]);
     if (payload.methods?.length) await db.methods.bulkPut(payload.methods as never[]);
     if (payload.batches?.length) await db.batches.bulkPut(payload.batches as never[]);
     if (payload.samples?.length) await db.samples.bulkPut(payload.samples as never[]);
+    if (payload.wokBatches?.length) await db.wokBatches.bulkPut(payload.wokBatches as never[]);
   });
   return counts;
 }

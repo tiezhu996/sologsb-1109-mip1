@@ -3,6 +3,7 @@ import { HERB_ORIGINS, type HerbMaterial } from '../types/herb-material';
 import { METHOD_NAMES, type ProcessingMethod } from '../types/processing-method';
 import type { ProcessBatch } from '../types/process-batch';
 import { CABINETS, type RetainSample } from '../types/retain-sample';
+import type { WokBatch } from '../types/wok-batch';
 import { judgeDegree, expectedYieldOf } from './degree';
 
 /** 首次打开时写入的示例台账，便于直接查看各页面效果 */
@@ -82,6 +83,8 @@ function buildSeedBatches(): ProcessBatch[] {
       locked,
       lockedAt: locked ? new Date(new Date(endedAt).getTime() + 30 * 60_000).toISOString() : undefined,
       qcBy: locked ? '质检员 · 赵敏' : undefined,
+      // 前两批由收锅生成，对应锅次；均已留样，用于演示“已留样锅次不能作废，只能登记异常”
+      wokId: index < 2 ? `wok-${String(index + 1).padStart(3, '0')}` : undefined,
       remark,
     };
   });
@@ -116,6 +119,142 @@ function buildSeedSamples(batches: ProcessBatch[]): RetainSample[] {
   });
 }
 
+/**
+ * 锅次示例数据：
+ * - wok-001/002 已收锅（对应前两批工序，均已留样），带交接链与异常记录；
+ * - wok-003/004 仍在锅上，换班后由接班操作人占着锅位，用于演示接手/收锅。
+ */
+function buildSeedWoks(batches: ProcessBatch[]): WokBatch[] {
+  const snapshot = (batch: ProcessBatch) => {
+    const method = SEED_METHODS.find((m) => m.id === batch.methodId)!;
+    return {
+      methodName: method.name,
+      methodAuxiliary: method.auxiliary,
+      auxRatio: method.auxRatio,
+      fireLevel: method.fireLevel,
+      methodDuration: method.duration,
+      tempRange: [...method.tempRange] as [number, number],
+      criterion: method.criterion,
+      criterionDimension: method.criterionDimension,
+    };
+  };
+
+  const finished: WokBatch[] = batches.slice(0, 2).map((batch, index) => ({
+    id: `wok-${String(index + 1).padStart(3, '0')}`,
+    wokNo: batch.batchNo,
+    pot: index === 0 ? '2号锅' : '1号锅',
+    herbId: batch.herbId,
+    methodId: batch.methodId,
+    ...snapshot(batch),
+    feedKg: batch.feedKg,
+    auxPlannedKg: batch.auxUsedKg,
+    startedAt: batch.startedAt,
+    startOperator: '陈玉兰',
+    startTeam: '甲班',
+    status: 'finished',
+    revision: index === 0 ? 3 : 1,
+    handovers:
+      index === 0
+        ? [
+            {
+              id: 'hand-seed-001',
+              at: new Date(new Date(batch.startedAt).getTime() + 8 * 60_000).toISOString(),
+              fromOperator: '陈玉兰',
+              fromTeam: '甲班',
+              toOperator: '刘建国',
+              toTeam: '乙班',
+              note: '麸皮已下，保持中火翻炒，注意焦斑',
+            },
+          ]
+        : [],
+    abnormals:
+      index === 0
+        ? [
+            {
+              id: 'abn-seed-001',
+              at: new Date(new Date(batch.endedAt).getTime() - 5 * 60_000).toISOString(),
+              reason: '出锅前局部温度偏高，个别片色偏深，已单独挑出',
+              operator: '刘建国',
+            },
+          ]
+        : [],
+    endedAt: batch.endedAt,
+    outputKg: Number(((batch.feedKg * batch.yieldRate) / 100).toFixed(1)),
+    auxUsedKg: batch.auxUsedKg,
+    yieldRate: batch.yieldRate,
+    degree: batch.degree,
+    finishOperator: batch.operator,
+    processBatchId: batch.id,
+    locked: true,
+  }));
+
+  const buildRunning = (
+    id: string,
+    pot: '3号锅' | '4号锅',
+    batchNo: string,
+    herbId: string,
+    methodId: string,
+    feedKg: number,
+    minutesAgo: number,
+    startOperator: string,
+    startTeam: string,
+    hand: WokBatch['handovers'][number] | null,
+  ): WokBatch => {
+    const method = SEED_METHODS.find((m) => m.id === methodId)!;
+    return {
+      id,
+      wokNo: batchNo,
+      pot,
+      herbId,
+      methodId,
+      methodName: method.name,
+      methodAuxiliary: method.auxiliary,
+      auxRatio: method.auxRatio,
+      fireLevel: method.fireLevel,
+      methodDuration: method.duration,
+      tempRange: [...method.tempRange] as [number, number],
+      criterion: method.criterion,
+      criterionDimension: method.criterionDimension,
+      feedKg,
+      auxPlannedKg: Number(((feedKg * method.auxRatio) / 100).toFixed(2)),
+      startedAt: isoMinutesAgo(minutesAgo),
+      startOperator,
+      startTeam,
+      status: 'running',
+      revision: hand ? 1 : 0,
+      handovers: hand ? [hand] : [],
+      abnormals: [],
+    };
+  };
+
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '').slice(2);
+  const running: WokBatch[] = [
+    buildRunning(
+      'wok-003',
+      '3号锅',
+      `PZ-${today}-03`,
+      'herb-010',
+      'method-006',
+      130,
+      35,
+      '陈玉兰',
+      '甲班',
+      {
+        id: 'hand-seed-003',
+        at: isoMinutesAgo(18),
+        fromOperator: '陈玉兰',
+        fromTeam: '甲班',
+        toOperator: '王丽',
+        toTeam: '乙班',
+        note: '蜂蜜已兑入，保持中火不粘手，预计 5 分钟后出锅',
+      },
+    ),
+    buildRunning('wok-004', '4号锅', `PZ-${today}-04`, 'herb-009', 'method-001', 55, 10, '刘建国', '乙班', null),
+  ];
+
+  return [...finished, ...running];
+}
+
 /** 首次打开（表内无数据）时写入示例数据；已有数据则不动 */
 export async function seedIfEmpty(): Promise<void> {
   const flag = await db.meta.get('seeded');
@@ -126,8 +265,9 @@ export async function seedIfEmpty(): Promise<void> {
   const methodCount = await db.methods.count();
   const batchCount = await db.batches.count();
   const sampleCount = await db.samples.count();
+  const wokCount = await db.wokBatches.count();
 
-  await db.transaction('rw', db.herbs, db.methods, db.batches, db.samples, db.meta, async () => {
+  await db.transaction('rw', [db.herbs, db.methods, db.batches, db.samples, db.wokBatches, db.meta], async () => {
     if (herbCount === 0) {
       await db.herbs.bulkPut(SEED_HERBS.filter((h) => HERB_ORIGINS.includes(h.origin)));
     }
@@ -141,14 +281,17 @@ export async function seedIfEmpty(): Promise<void> {
     if (sampleCount === 0) {
       await db.samples.bulkPut(buildSeedSamples(batches));
     }
+    if (wokCount === 0) {
+      await db.wokBatches.bulkPut(buildSeedWoks(batches));
+    }
     await db.meta.put({ key: 'seeded', value: new Date().toISOString() });
   });
 }
 
 /** 清空全部本地数据（用于重置演示环境） */
 export async function resetAll(): Promise<void> {
-  await db.transaction('rw', db.herbs, db.methods, db.batches, db.samples, db.meta, async () => {
-    await Promise.all([db.herbs.clear(), db.methods.clear(), db.batches.clear(), db.samples.clear(), db.meta.clear()]);
+  await db.transaction('rw', [db.herbs, db.methods, db.batches, db.samples, db.wokBatches, db.wokDrafts, db.meta], async () => {
+    await Promise.all([db.herbs.clear(), db.methods.clear(), db.batches.clear(), db.samples.clear(), db.wokBatches.clear(), db.wokDrafts.clear(), db.meta.clear()]);
   });
   await seedIfEmpty();
 }

@@ -34,6 +34,8 @@ export interface ProcessBatch {
   lockedAt?: string;
   /** 质检员放行/改判人 */
   qcBy?: string;
+  /** 收锅生成的工序记录：对应锅次 id（同一锅次在工序记录与留样台账中一致） */
+  wokId?: string;
   /** 备注 */
   remark?: string;
 }

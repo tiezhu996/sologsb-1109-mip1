@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { db } from '../utils/db';
 import { uid } from '../utils/id';
+import { broadcastChange } from '../utils/crossTab';
 import { buildExpiryList, dueSamples, todayStr } from '../utils/degree';
 import type { ObserveLog, RetainSample, SampleExpiry } from '../types/retain-sample';
 
@@ -60,6 +61,7 @@ export const useSampleStore = create<SampleState>()((set, get) => ({
     };
     await db.samples.put(sample);
     set({ samples: [...get().samples, sample] });
+    broadcastChange('samples');
     return sample;
   },
 
@@ -71,11 +73,13 @@ export const useSampleStore = create<SampleState>()((set, get) => ({
     const next: RetainSample = { ...current, ...patch };
     await db.samples.put(next);
     set({ samples: get().samples.map((s) => (s.id === id ? next : s)) });
+    broadcastChange('samples');
   },
 
   removeSample: async (id) => {
     await db.samples.delete(id);
     set({ samples: get().samples.filter((s) => s.id !== id) });
+    broadcastChange('samples');
   },
 
   appendObserveLog: async (sampleId, input) => {
@@ -96,6 +100,7 @@ export const useSampleStore = create<SampleState>()((set, get) => ({
     const next: RetainSample = { ...current, observeLogs: logs };
     await db.samples.put(next);
     set({ samples: get().samples.map((s) => (s.id === sampleId ? next : s)) });
+    broadcastChange('samples');
   },
 
   expiryList: (warnDays = 30) => buildExpiryList(get().samples, warnDays),

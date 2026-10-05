@@ -2,8 +2,11 @@ import { db } from './db';
 import { HERB_ORIGINS, type HerbMaterial } from '../types/herb-material';
 import { METHOD_NAMES, type ProcessingMethod } from '../types/processing-method';
 import type { ProcessBatch } from '../types/process-batch';
+import type { PotRound } from '../types/pot-round';
 import { CABINETS, type RetainSample } from '../types/retain-sample';
 import { judgeDegree, expectedYieldOf } from './degree';
+import { buildRoundsFromBatches, buildPotRoundNo, freezePlan } from './pot-backfill';
+import { uid } from './id';
 
 /** 首次打开时写入的示例台账，便于直接查看各页面效果 */
 export const SEED_HERBS: HerbMaterial[] = [
@@ -126,29 +129,116 @@ export async function seedIfEmpty(): Promise<void> {
   const methodCount = await db.methods.count();
   const batchCount = await db.batches.count();
   const sampleCount = await db.samples.count();
+  const potCount = await db.potRounds.count();
 
-  await db.transaction('rw', db.herbs, db.methods, db.batches, db.samples, db.meta, async () => {
+  await db.transaction('rw', [db.herbs, db.methods, db.batches, db.samples, db.potRounds, db.meta], async () => {
     if (herbCount === 0) {
       await db.herbs.bulkPut(SEED_HERBS.filter((h) => HERB_ORIGINS.includes(h.origin)));
     }
     if (methodCount === 0) {
       await db.methods.bulkPut(SEED_METHODS.filter((m) => METHOD_NAMES.includes(m.name)));
     }
-    const batches = buildSeedBatches();
+    const seedBatches = buildSeedBatches();
+    const batches = batchCount === 0 ? seedBatches : await db.batches.toArray();
+    const methods = await db.methods.toArray();
+
+    // 历史工序批次回填为「已收锅」锅次，并回写批次/留样的锅次关联
+    let seedSamples: RetainSample[] = [];
+    if (sampleCount === 0 && batchCount === 0) {
+      seedSamples = buildSeedSamples(seedBatches);
+    } else if (sampleCount === 0) {
+      seedSamples = [];
+    } else {
+      seedSamples = await db.samples.toArray();
+    }
+
+    if (potCount === 0) {
+      const derived = buildRoundsFromBatches({ batches, methods, samples: seedSamples, idPrefix: 'pot-seed' });
+
+      // 回写锅次关联后再入库，使工序记录与留样台账显示同一锅次
+      derived.batchPatches.forEach((patch, id) => {
+        const b = batches.find((x) => x.id === id);
+        if (b) {
+          b.potRoundId = patch.potRoundId;
+          b.potRoundNo = patch.potRoundNo;
+        }
+      });
+      derived.samplePatches.forEach((patch, id) => {
+        const s = seedSamples.find((x) => x.id === id);
+        if (s) {
+          s.potRoundId = patch.potRoundId;
+          s.potRoundNo = patch.potRoundNo;
+        }
+      });
+
+      const running = buildSeedRunningRound({ methods, seqOfDay: derived.rounds.length + 1 });
+      await db.potRounds.bulkPut([...derived.rounds, running]);
+    }
+
     if (batchCount === 0) {
       await db.batches.bulkPut(batches);
     }
     if (sampleCount === 0) {
-      await db.samples.bulkPut(buildSeedSamples(batches));
+      await db.samples.bulkPut(seedSamples);
     }
     await db.meta.put({ key: 'seeded', value: new Date().toISOString() });
   });
 }
 
+/**
+ * 演示用「在锅」锅次：占用 1 号锅、方法与投料已冻结、已换过一次班，
+ * 便于直接查看锅位占用、接手记录与「收锅 / 再接手 / 异常 / 作废」入口。
+ */
+function buildSeedRunningRound(input: { methods: ProcessingMethod[]; seqOfDay: number }): PotRound {
+  const method = input.methods.find((m) => m.id === 'method-001') ?? input.methods[0];
+  const startedAt = new Date(Date.now() - 35 * 60_000).toISOString();
+  const handoverAt = new Date(Date.now() - 12 * 60_000).toISOString();
+  const feedKg = 100;
+  return {
+    id: 'pot-running-demo',
+    potRoundNo: buildPotRoundNo(input.seqOfDay, startedAt),
+    potNo: '1号锅',
+    activePot: '1号锅#active',
+    herbId: 'herb-009',
+    batchNo: 'SY-DEMO-01',
+    status: '在锅',
+    version: 2,
+    frozen: freezePlan(method, feedKg),
+    startedAt,
+    startOperator: '陈玉兰',
+    handovers: [
+      {
+        id: uid('handover'),
+        seq: 1,
+        fromOperator: '开班',
+        toOperator: '陈玉兰',
+        at: startedAt,
+        potTemp: method.tempRange[0],
+        fireLevel: method.fireLevel,
+        note: '开班清炒桑叶，锅温稳定后下药材',
+        basedOnVersion: 1,
+      },
+      {
+        id: uid('handover'),
+        seq: 2,
+        fromOperator: '陈玉兰',
+        toOperator: '刘建国',
+        at: handoverAt,
+        potTemp: 112,
+        fireLevel: '文火',
+        note: '表面刚开始转黄，保持文火勤翻，预计再炒 5 分钟',
+        basedOnVersion: 2,
+      },
+    ],
+    anomalies: [],
+    sampleIds: [],
+  };
+}
+
 /** 清空全部本地数据（用于重置演示环境） */
 export async function resetAll(): Promise<void> {
-  await db.transaction('rw', db.herbs, db.methods, db.batches, db.samples, db.meta, async () => {
-    await Promise.all([db.herbs.clear(), db.methods.clear(), db.batches.clear(), db.samples.clear(), db.meta.clear()]);
+  await db.transaction('rw', [db.herbs, db.methods, db.batches, db.samples, db.potRounds, db.meta], async () => {
+    await Promise.all([db.herbs.clear(), db.methods.clear(), db.batches.clear(), db.samples.clear(), db.potRounds.clear(), db.meta.clear()]);
   });
   await seedIfEmpty();
 }

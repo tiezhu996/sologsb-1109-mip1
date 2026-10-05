@@ -34,6 +34,10 @@ export interface ProcessBatch {
   lockedAt?: string;
   /** 质检员放行/改判人 */
   qcBy?: string;
+  /** 由锅次收锅生成时，关联锅次 id */
+  potRoundId?: string;
+  /** 锅次号（冗余，工序记录与留样台账显示同一锅次） */
+  potRoundNo?: string;
   /** 备注 */
   remark?: string;
 }

@@ -184,6 +184,12 @@ export default function BatchBoard() {
 
   const columns: TableColumnsType<ProcessBatch> = [
     { title: '生产批号', dataIndex: 'batchNo', width: 130, render: (v: string) => <Text strong>{v}</Text> },
+    {
+      title: '锅次号',
+      dataIndex: 'potRoundNo',
+      width: 140,
+      render: (v?: string) => (v ? <Tag color="geekblue">{v}</Tag> : <Text type="secondary">历史直录</Text>),
+    },
     { title: '药材', dataIndex: 'herbId', width: 90, render: (id: string) => herbName(id) },
     { title: '方法', dataIndex: 'methodId', width: 90, render: (id: string) => methodOf(id)?.name ?? '-' },
     {
@@ -278,7 +284,7 @@ export default function BatchBoard() {
       {visibleBatches.length === 0 ? (
         <EmptyPanel description="没有符合条件的工序记录" actionText="新建一条工序记录" onAction={openCreate} />
       ) : (
-        <Table rowKey="id" size="small" columns={columns} dataSource={visibleBatches} pagination={{ pageSize: 10 }} scroll={{ x: 1400 }} />
+        <Table rowKey="id" size="small" columns={columns} dataSource={visibleBatches} pagination={{ pageSize: 10 }} scroll={{ x: 1540 }} />
       )}
 
       <Modal

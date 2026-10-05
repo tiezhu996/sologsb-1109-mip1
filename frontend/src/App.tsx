@@ -7,12 +7,14 @@ import {
   ProfileOutlined,
   DashboardOutlined,
   DownloadOutlined,
+  SwapOutlined,
 } from '@ant-design/icons';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { seedIfEmpty } from './utils/seed';
 import { useHerbStore } from './stores/herbStore';
 import { useMethodStore } from './stores/methodStore';
 import { useBatchStore } from './stores/batchStore';
+import { usePotStore } from './stores/potStore';
 import { useSampleStore } from './stores/sampleStore';
 import { downloadText, exportBackupJson } from './utils/export';
 
@@ -23,6 +25,7 @@ const MENU_ITEMS = [
   { key: '/', icon: <DashboardOutlined />, label: <Link to="/">首页总览</Link> },
   { key: '/herbs', icon: <ExperimentOutlined />, label: <Link to="/herbs">药材台账</Link> },
   { key: '/methods', icon: <FireOutlined />, label: <Link to="/methods">炮制方法</Link> },
+  { key: '/pots', icon: <SwapOutlined />, label: <Link to="/pots">锅次交接</Link> },
   { key: '/batches', icon: <ProfileOutlined />, label: <Link to="/batches">工序记录台</Link> },
   { key: '/samples', icon: <InboxOutlined />, label: <Link to="/samples">留样台账</Link> },
 ];
@@ -34,6 +37,7 @@ export default function App() {
   const hydrateHerbs = useHerbStore((s) => s.hydrate);
   const hydrateMethods = useMethodStore((s) => s.hydrate);
   const hydrateBatches = useBatchStore((s) => s.hydrate);
+  const hydratePots = usePotStore((s) => s.hydrate);
   const hydrateSamples = useSampleStore((s) => s.hydrate);
   const location = useLocation();
 
@@ -42,7 +46,7 @@ export default function App() {
     (async () => {
       try {
         await seedIfEmpty();
-        await Promise.all([hydrateHerbs(), hydrateMethods(), hydrateBatches(), hydrateSamples()]);
+        await Promise.all([hydrateHerbs(), hydrateMethods(), hydrateBatches(), hydratePots(), hydrateSamples()]);
       } catch (error) {
         message.error(`本地数据装载失败：${(error as Error).message}`);
       } finally {
@@ -54,7 +58,7 @@ export default function App() {
     return () => {
       alive = false;
     };
-  }, [hydrateHerbs, hydrateMethods, hydrateBatches, hydrateSamples, message]);
+  }, [hydrateHerbs, hydrateMethods, hydrateBatches, hydratePots, hydrateSamples, message]);
 
   const selectedKey = MENU_ITEMS.map((item) => item.key)
     .filter((key) => (key === '/' ? location.pathname === '/' : location.pathname.startsWith(key)))

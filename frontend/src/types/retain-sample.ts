@@ -22,6 +22,10 @@ export interface RetainSample {
   sampleNo: string;
   /** 关联炮制批次 */
   batchId: string;
+  /** 锅次号（与工序记录同源，留样台账直接显示同一锅次） */
+  potRoundNo?: string;
+  /** 关联锅次 id（已产生留样的锅次不可作废） */
+  potRoundId?: string;
   /** 留样量（g） */
   amountG: number;
   /** 留样期（月） */

@@ -4,6 +4,7 @@ import App from '../App';
 import ProcessBoard from '../pages/ProcessBoard';
 import HerbList from '../pages/HerbList';
 import MethodList from '../pages/MethodList';
+import PotBoard from '../pages/PotBoard';
 import BatchBoard from '../pages/BatchBoard';
 import SampleLedger from '../pages/SampleLedger';
 
@@ -31,6 +32,7 @@ export const routes: RouteObject[] = [
       { index: true, element: <ProcessBoard /> },
       { path: 'herbs', element: <HerbList /> },
       { path: 'methods', element: <MethodList /> },
+      { path: 'pots', element: <PotBoard /> },
       { path: 'batches', element: <BatchBoard /> },
       { path: 'samples', element: <SampleLedger /> },
       { path: '*', element: <NotFound /> },

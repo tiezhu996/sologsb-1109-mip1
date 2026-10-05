@@ -7,9 +7,11 @@ import ProcessTimeline from '../components/common/ProcessTimeline';
 import { useHerbStore } from '../stores/herbStore';
 import { useMethodStore } from '../stores/methodStore';
 import { useBatchStore } from '../stores/batchStore';
+import { usePotStore } from '../stores/potStore';
 import { useSampleStore } from '../stores/sampleStore';
 import { dueSamples, formatDate } from '../utils/degree';
 import type { ProcessBatch } from '../types/process-batch';
+import type { PotRound } from '../types/pot-round';
 import type { SampleExpiry } from '../types/retain-sample';
 
 const { Title, Paragraph, Text } = Typography;
@@ -19,8 +21,10 @@ export default function ProcessBoard() {
   const herbs = useHerbStore((s) => s.herbs);
   const methods = useMethodStore((s) => s.methods);
   const batches = useBatchStore((s) => s.batches);
+  const rounds = usePotStore((s) => s.rounds);
   const samples = useSampleStore((s) => s.samples);
 
+  const activeRounds = useMemo(() => rounds.filter((r) => r.status === '在锅'), [rounds]);
   const pending = useMemo(() => batches.filter((b) => !b.locked), [batches]);
   const due = useMemo(() => dueSamples(samples, 30), [samples]);
   const degreeCount = useMemo(() => {
@@ -43,6 +47,12 @@ export default function ProcessBoard() {
 
   const pendingColumns: TableColumnsType<ProcessBatch> = [
     { title: '生产批号', dataIndex: 'batchNo', width: 130, render: (v: string) => <Text strong>{v}</Text> },
+    {
+      title: '锅次号',
+      dataIndex: 'potRoundNo',
+      width: 140,
+      render: (v?: string) => (v ? <Tag color="geekblue">{v}</Tag> : <Text type="secondary">直录</Text>),
+    },
     { title: '药材', dataIndex: 'herbId', width: 100, render: (id: string) => herbName(id) },
     { title: '炮制方法', dataIndex: 'methodId', width: 100, render: (id: string) => methodName(id) },
     { title: '投料量(kg)', dataIndex: 'feedKg', width: 100, align: 'right' },
@@ -62,6 +72,29 @@ export default function ProcessBoard() {
     },
     { title: '操作人', dataIndex: 'operator', width: 90 },
     { title: '开始时间', dataIndex: 'startedAt', width: 150, render: (v: string) => formatDate(v) },
+  ];
+
+  const activeRoundColumns: TableColumnsType<PotRound> = [
+    { title: '锅次号', dataIndex: 'potRoundNo', width: 140, render: (v: string) => <Text strong>{v}</Text> },
+    { title: '锅位', dataIndex: 'potNo', width: 80, render: (v?: string) => <Tag color="red">{v}</Tag> },
+    { title: '药材', dataIndex: 'herbId', width: 90, render: (id: string) => herbName(id) },
+    {
+      title: '冻结方法/投料',
+      width: 160,
+      render: (_, r) => `${r.frozen.methodName} · ${r.frozen.feedKg}kg`,
+    },
+    {
+      title: '现班组',
+      width: 100,
+      render: (_, r) => r.handovers[r.handovers.length - 1]?.toOperator ?? r.startOperator,
+    },
+    {
+      title: '交接',
+      dataIndex: 'handovers',
+      width: 70,
+      align: 'right',
+      render: (hs: PotRound['handovers']) => `${Math.max(hs.length - 1, 0)} 次`,
+    },
   ];
 
   const dueColumns: TableColumnsType<SampleExpiry> = [
@@ -100,10 +133,10 @@ export default function ProcessBoard() {
 
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
         <Col xs={12} md={6}>
-          <StatBadge label="待炮制（未锁定）批次" value={pending.length} unit="批" status="warning" hint="得率与程度判定提交后即锁定" />
+          <StatBadge label="在锅锅次（占用锅位）" value={activeRounds.length} unit="口" status={activeRounds.length ? 'warning' : 'success'} hint="换班只追加接手记录；收锅后释放锅位" />
         </Col>
         <Col xs={12} md={6}>
-          <StatBadge label="在册药材批次" value={herbs.length} unit="批" />
+          <StatBadge label="待判定工序记录" value={pending.length} unit="批" />
         </Col>
         <Col xs={12} md={6}>
           <StatBadge label="30 天内到期留样" value={due.length} unit="份" status={due.length > 0 ? 'error' : 'success'} />
@@ -140,7 +173,28 @@ export default function ProcessBoard() {
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={15}>
           <Card
-            title="待炮制批次"
+            title="在锅锅次（锅位占用中）"
+            size="small"
+            style={{ marginBottom: 16 }}
+            extra={
+              <Link to="/pots">
+                <Button size="small" type="primary">
+                  去锅次交接
+                </Button>
+              </Link>
+            }
+          >
+            <Table
+              rowKey="id"
+              size="small"
+              columns={activeRoundColumns}
+              dataSource={activeRounds}
+              pagination={{ pageSize: 4, hideOnSinglePage: true }}
+              locale={{ emptyText: '当前没有在锅锅次，锅位全部空闲' }}
+            />
+          </Card>
+          <Card
+            title={pending.length > 0 ? `待判定工序记录（${pending.length}）` : '最近收锅工序记录'}
             size="small"
             extra={
               <Link to="/batches">
@@ -154,7 +208,7 @@ export default function ProcessBoard() {
               rowKey="id"
               size="small"
               columns={pendingColumns}
-              dataSource={pending}
+              dataSource={pending.length > 0 ? pending : batches.slice(0, 6)}
               pagination={{ pageSize: 6, hideOnSinglePage: true }}
               scroll={{ x: 900 }}
             />

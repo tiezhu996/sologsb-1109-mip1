@@ -65,6 +65,14 @@ export default function SampleLedger() {
     return `${batch.batchNo} · ${herb?.name ?? '未知药材'} · 得率 ${batch.yieldRate}%`;
   };
 
+  /** 选择工序记录时带出同一锅次（留样台账与工序记录显示同一锅次号） */
+  const potOfBatch = (batchId?: string) => {
+    if (!batchId) return undefined;
+    const batch = batches.find((b) => b.id === batchId);
+    if (!batch?.potRoundId) return undefined;
+    return { potRoundId: batch.potRoundId, potRoundNo: batch.potRoundNo };
+  };
+
   const openCreate = () => {
     const nextIndex = samples.length + 1;
     const batch = batches[0];
@@ -86,15 +94,18 @@ export default function SampleLedger() {
     if (occupied) {
       message.warning(`柜位 ${values.cabinet} 已有留样，仍将并存放置`);
     }
+    const pot = potOfBatch(values.batchId);
     await createSample({
       sampleNo: values.sampleNo,
       batchId: values.batchId,
+      potRoundId: pot?.potRoundId,
+      potRoundNo: pot?.potRoundNo,
       amountG: values.amountG,
       retainMonths: values.retainMonths,
       cabinet: values.cabinet,
       retainedAt: values.retainedAt.toISOString(),
     });
-    message.success(`已登记留样 ${values.sampleNo}`);
+    message.success(`已登记留样 ${values.sampleNo}${pot?.potRoundNo ? `（锅次 ${pot.potRoundNo}）` : ''}；该锅次此后不能作废`);
     setOpen(false);
   };
 
@@ -124,7 +135,13 @@ export default function SampleLedger() {
 
   const columns: TableColumnsType<SampleExpiry> = [
     { title: '留样编号', width: 170, render: (_, row) => <Text strong>{row.sample.sampleNo}</Text> },
-    { title: '关联批次', width: 260, render: (_, row) => batchLabel(row.sample.batchId) },
+    {
+      title: '锅次号',
+      width: 140,
+      render: (_, row) =>
+        row.sample.potRoundNo ? <Tag color="geekblue">{row.sample.potRoundNo}</Tag> : <Text type="secondary">历史直录</Text>,
+    },
+    { title: '关联批次', width: 240, render: (_, row) => batchLabel(row.sample.batchId) },
     { title: '留样量(g)', width: 100, align: 'right', render: (_, row) => row.sample.amountG },
     { title: '留样期(月)', width: 100, align: 'right', render: (_, row) => row.sample.retainMonths },
     { title: '柜位', width: 80, render: (_, row) => <Tag color="green">{row.sample.cabinet}</Tag> },
@@ -212,7 +229,7 @@ export default function SampleLedger() {
       {visible.length === 0 ? (
         <EmptyPanel description={selectedCabinet ? `柜位 ${selectedCabinet} 暂无留样` : '暂无留样记录'} actionText="登记留样" onAction={openCreate} />
       ) : (
-        <Table rowKey={(row) => row.sample.id} size="small" columns={columns} dataSource={visible} pagination={{ pageSize: 8 }} scroll={{ x: 1400 }} />
+        <Table rowKey={(row) => row.sample.id} size="small" columns={columns} dataSource={visible} pagination={{ pageSize: 8 }} scroll={{ x: 1500 }} />
       )}
 
       <Modal open={open} title="登记留样" onCancel={() => setOpen(false)} onOk={submit} okText="保存" cancelText="取消" width={560}>

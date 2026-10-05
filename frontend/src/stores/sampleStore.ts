@@ -7,6 +7,8 @@ import type { ObserveLog, RetainSample, SampleExpiry } from '../types/retain-sam
 export interface SampleInput {
   sampleNo: string;
   batchId: string;
+  potRoundId?: string;
+  potRoundNo?: string;
   amountG: number;
   retainMonths: number;
   cabinet: string;
@@ -52,13 +54,30 @@ export const useSampleStore = create<SampleState>()((set, get) => ({
       id: uid('sample'),
       sampleNo: input.sampleNo.trim(),
       batchId: input.batchId,
+      potRoundId: input.potRoundId,
+      potRoundNo: input.potRoundNo,
       amountG: Number(input.amountG) || 0,
       retainMonths: Number(input.retainMonths) || 6,
       cabinet: input.cabinet,
       retainedAt: input.retainedAt ?? new Date().toISOString(),
       observeLogs: [],
     };
-    await db.samples.put(sample);
+    // 留样挂到锅次：登记后该锅次即不可作废，只能登记异常原因
+    if (sample.potRoundId) {
+      const { usePotStore } = await import('./potStore');
+      const { broadcastPotChange } = await import('../utils/pot-sync');
+      await db.transaction('rw', db.samples, db.potRounds, async () => {
+        await db.samples.put(sample);
+        const round = await db.potRounds.get(sample.potRoundId!);
+        if (round && !round.sampleIds.includes(sample.id)) {
+          await db.potRounds.put({ ...round, sampleIds: [...round.sampleIds, sample.id], version: round.version + 1 });
+        }
+      });
+      await usePotStore.getState().hydrate();
+      broadcastPotChange({ kind: 'sample-linked', potRoundId: sample.potRoundId });
+    } else {
+      await db.samples.put(sample);
+    }
     set({ samples: [...get().samples, sample] });
     return sample;
   },
